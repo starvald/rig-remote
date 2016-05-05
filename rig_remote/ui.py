@@ -74,26 +74,27 @@ TAS - Tim Sweeney - mainetim@gmail.com
 
 2016/05/02 - TAS - Refactor is_valid_hostname(), and the methods that call it, to properly handle bad input.
 
+2016/05/04 - TAS - Cut some bookmark functionality out to start moving it to s separate class. ui.py now
+                   broken.
+
 """
 
 # import modules
 
 
 import logging
-from rig_remote.constants import ALLOWED_BOOKMARK_TASKS
 from rig_remote.constants import SUPPORTED_SCANNING_ACTIONS
 from rig_remote.constants import CBB_MODES
 from rig_remote.constants import BOOKMARKS_FILE
-from rig_remote.constants import LEN_BM
 from rig_remote.constants import BM
 from rig_remote.constants import DEFAULT_CONFIG
 from rig_remote.constants import UI_EVENT_TIMER_DELAY
 from rig_remote.exceptions import UnsupportedScanningConfigError
-from rig_remote.exceptions import InvalidPathError
-from rig_remote.disk_io import IO
 from rig_remote.rigctl import RigCtl
 from rig_remote.scanning import ScanningTask
 from rig_remote.scanning import Scanning
+from rig_remote.stmessenger import STMessenger
+from rig_remote.utility import frequency_pp, frequency_pp_parse
 import Tkinter as tk
 import ttk
 from Tkinter import LabelFrame
@@ -102,7 +103,7 @@ import threading
 import itertools
 import re
 from socket import gethostbyname
-from rig_remote.stmessenger import STMessenger
+
 
 # logging configuration
 logger = logging.getLogger(__name__)
@@ -1006,56 +1007,6 @@ class RigRemote(ttk.Frame):
             ac.write_conf()
         self.master.destroy()
 
-    def bookmark(self, task, delimiter, silent = False):
-        """Bookmarks handling. loads and saves the bookmarks as
-        a csv file.
-        :param task: either load or save
-        :type task: string
-        :param delimiter: delimiter to use for creating the csv file
-        :type delimiter: string
-        :param silent: suppress messagebox
-        :type silent: boolean
-        :raises : none
-        :returns : none
-        """
-
-        if task not in ALLOWED_BOOKMARK_TASKS:
-            logger.info("Not allowed bookmark task requested {}, "\
-                        "ignoring.".format(task))
-
-        bookmarks = IO()
-        if task == "load":
-            try:
-                bookmarks.csv_load(self.bookmarks_file, delimiter)
-                count = 0
-                for line in bookmarks.row_list:
-                    count += 1
-                    error = False
-                    if len(line) < LEN_BM:
-                        line.append("O")
-                    if self._frequency_pp_parse(line[BM.freq]) == None :
-                        error = True
-                    line[BM.freq] = self._frequency_pp(line[BM.freq])
-                    if line[BM.mode] not in CBB_MODES :
-                        error = True
-                    if error == True :
-                        if not silent:
-                            tkMessageBox.showerror("Error", "Invalid value in "\
-                                               "Bookmark #%i. "\
-                                               "Skipping..." %count)
-                    else :
-                        item = self.tree.insert('', tk.END, values=line)
-                        self.bookmark_bg_tag(item, line[BM.lockout])
-            except InvalidPathError:
-                logger.info("No bookmarks file found, skipping.")
-
-        if task == "save":
-            for item in self.tree.get_children():
-                values = self.tree.item(item).get('values')
-                values[BM.freq] = self._frequency_pp_parse(values[BM.freq])
-                bookmarks.row_list.append(values)
-            bookmarks.csv_save(self.bookmarks_file, delimiter)
-
     def bookmark_toggle(self, icycle=itertools.cycle(["Stop", "Start"])):
         """Toggle bookmark scan Start/Stop button, changing label text as
            appropriate.
@@ -1385,7 +1336,7 @@ class RigRemote(ttk.Frame):
             self.params["txt_description"].insert(0,
                                                   "activity on {}".format(nb["time"]))
             self.params["txt_frequency"].insert(0,
-                                                self._frequency_pp(str(nb["freq"])))
+                                                frequency_pp(str(nb["freq"])))
             self.params["cbb_mode"].insert(0,nb["mode"])
             # adding bookmark to the list
             self.cb_add(True)
@@ -1417,7 +1368,7 @@ class RigRemote(ttk.Frame):
             mode = self.rigctl.get_mode()
             # update fields
             self.params["txt_frequency"].insert(0,
-                                                self._frequency_pp(frequency))
+                                                frequency_pp(frequency))
             self.params["cbb_mode"].insert(0, mode)
         except Exception as err:
             if not silent:
@@ -1473,7 +1424,7 @@ class RigRemote(ttk.Frame):
         """
 
         # get values
-        frequency = self._frequency_pp_parse(self.params["txt_frequency"].get())
+        frequency = frequency_pp_parse(self.params["txt_frequency"].get())
         try:
             int(frequency)
         except (ValueError, TypeError):
@@ -1489,7 +1440,7 @@ class RigRemote(ttk.Frame):
         idx = tk.END
         for item in self.tree.get_children():
             freq = self.tree.item(item).get('values')[BM.freq]
-            uni_curr_freq = self._frequency_pp_parse(freq)
+            uni_curr_freq = frequency_pp_parse(freq)
             curr_freq = uni_curr_freq.encode("UTF-8")
             curr_mode = self.tree.item(item).get('values')[BM.mode]
             if frequency < curr_freq:
@@ -1505,7 +1456,7 @@ class RigRemote(ttk.Frame):
         # insert
         item = self.tree.insert('',
                                 idx,
-                                values=[self._frequency_pp(frequency),
+                                values=[frequency_pp(frequency),
                                         mode,
                                         description,
                                         lockout])
@@ -1530,30 +1481,3 @@ class RigRemote(ttk.Frame):
             # save
         self.bookmark("save", ",")
         self._clear_form()
-
-    def _frequency_pp(self, frequency):
-        """Filter invalid chars and add thousands separator.
-
-        :param frequency: frequency value
-        :type frequency: string
-        :return: frequency with separator
-        :return type: string
-        """
-
-        return '{:,}'.format(int(re.sub("[^0-9]", '', frequency)))
-
-    def _frequency_pp_parse(self, frequency):
-        """Remove thousands separator and check for invalid chars.
-
-        :param frequency: frequency value
-        :type frequency: string
-        :return: frequency without separator or None if invalid chars present
-        :return type: string or None
-        """
-
-        nocommas = frequency.replace(',', '')
-        results = re.search("[^0-9]", nocommas)
-        if results == None :
-            return (nocommas)
-        else :
-            return (None)
