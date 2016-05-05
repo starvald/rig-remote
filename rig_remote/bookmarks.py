@@ -28,9 +28,11 @@ TAS - Tim Sweeney - mainetim@gmail.com
 import os
 import logging
 
+from collections import MutableMapping
+
 from rig_remote.constants import CBB_MODES
 from rig_remote.disk_io import IO
-from rig_remote.exceptions import InvalidPathError
+from rig_remote.exceptions import InvalidPathError, InvalidBookmark
 
 from rig_remote.constants import LEN_BM
 from rig_remote.constants import BM
@@ -60,10 +62,38 @@ def find_existing_bookmarks_file():
                                             ".rig-remote/rig-remote-bookmarks.csv"))
     return filename
 
+class Bookmark(MutableMapping):
+    """Bookmark stores an individual bookmark, each instance to contain:
+           frequency: a string of digits
+           mode: a string from CBB_MODE,
+           description: string
+           lock: string, either 'O' (Open) or 'L' (Locked)
+       and an id_key, for use in mapping to a UI tree element.
+    """
 
-class Bookmarks(object):
-    """ Bookmarks is a list of dicts, each dict containing a frequency, mode, description
-        and lock value. Each instance will have an associated file name stored.
+    def __init__(self, id_key, *args, **kwargs):
+        self.id_key = id_key
+        self.store = dict()
+        self.update(dict(*args, **kwargs))  # use the free update to set keys
+
+    def __getitem__(self, key):
+        return self.store[key]
+
+    def __setitem__(self, key, value):
+        self.store[key] = value
+
+    def __delitem__(self, key):
+        del self.store[key]
+
+    def __iter__(self):
+        return iter(self.store)
+
+    def __len__(self):
+        return len(self.store)
+
+class BookmarkSet(object):
+    """ BookmarkSet is a list of Bookmarks objects.
+        Each instance will have an associated file name stored.
     """
 
     def __init__(self, filename):
@@ -81,7 +111,6 @@ class Bookmarks(object):
             return
         count = 0
         for line in bookmark_list.row_list:
-            count += 1
             error = False
             if len(line) < LEN_BM:
                 line.append("O")
@@ -90,12 +119,9 @@ class Bookmarks(object):
             if line[BM.mode] not in CBB_MODES:
                 error = True
             if error == True:
-                if not silent:
-                    tkMessageBox.showerror("Error", "Invalid value in " \
-                    "Bookmark #%i. " \
-                    "Skipping..." % count)
+                raise InvalidBookmark
             else:
-                self.bookmarks.append(dict(zip(bookmark_keys,line)))
+                self.bookmarks.append(Bookmark('', zip(bookmark_keys,line)))
 
     def save_to_file(self):
         bookmark_list = IO()

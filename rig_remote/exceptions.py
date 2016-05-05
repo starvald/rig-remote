@@ -28,6 +28,9 @@ class InvalidPathError (NonRetriableError):
 class UnsupportedScanningConfigError(NonRetriableError):
     pass
 
+class InvalidBookmark(NonRetriableError):
+    pass
+
 # retriable custom exceptions
 
 class RetriableError (object):
