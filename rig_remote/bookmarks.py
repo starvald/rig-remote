@@ -32,7 +32,7 @@ from collections import MutableMapping
 
 from rig_remote.constants import CBB_MODES
 from rig_remote.disk_io import IO
-from rig_remote.exceptions import InvalidPathError, InvalidBookmark
+from rig_remote.exceptions import InvalidPathError, InvalidBookmark, InvalidBookmarkKey
 
 from rig_remote.constants import LEN_BM
 from rig_remote.constants import BM
@@ -101,7 +101,7 @@ class BookmarkSet(object):
         self.bookmarks = []
         self.filename = filename
 
-    def load_from_file(self, silent = False):
+    def load_from_file(self):
 
         bookmark_list = IO()
         try:
@@ -124,9 +124,33 @@ class BookmarkSet(object):
                 self.bookmarks.append(Bookmark('', zip(bookmark_keys,line)))
 
     def save_to_file(self):
+
         bookmark_list = IO()
 
         for entry in self.bookmarks:
             btuple = (entry['frequency'], entry['mode'], entry['description'], entry['lock'])
             bookmark_list.row_list.append(btuple)
         bookmark_list.csv_save(self.filename, ',')
+
+    def append(self, id_key, frequency, mode, description = '', lock = ''):
+
+        try:
+            int(frequency)
+        except (ValueError, TypeError) :
+            raise InvalidBookmark
+            return
+        if mode not in CBB_MODES:
+            raise InvalidBookmark
+            return
+        if lock not in ('O', 'L', ''):
+            raise InvalidBookmark
+            return
+        item = (frequency, mode, description, lock)
+        self.bookmarks.append(Bookmark(id_key, zip(bookmark_keys, item)))
+
+    def delete(self, id_key):
+
+        if id_key == '':
+            raise InvalidBookmarkKey
+            return
+        self.bookmarks[:] = [item for item in self.bookmarks if item.id_key != id_key]

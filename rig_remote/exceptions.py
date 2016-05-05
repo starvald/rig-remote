@@ -31,6 +31,10 @@ class UnsupportedScanningConfigError(NonRetriableError):
 class InvalidBookmark(NonRetriableError):
     pass
 
+class InvalidBookmarkKey(NonRetriableError):
+    pass
+
+
 # retriable custom exceptions
 
 class RetriableError (object):
