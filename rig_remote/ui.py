@@ -83,6 +83,7 @@ TAS - Tim Sweeney - mainetim@gmail.com
 
 
 import logging
+from rig_remote.bookmarks import BookmarkSet
 from rig_remote.constants import SUPPORTED_SCANNING_ACTIONS
 from rig_remote.constants import CBB_MODES
 from rig_remote.constants import BOOKMARKS_FILE
@@ -290,7 +291,9 @@ class RigRemote(ttk.Frame):
         self.focus_force()
         self.update()
         # bookmarks loading on start
-        self.bookmark("load", ",")
+        self.bookmarks = BookmarkSet(self.bookmarks_file)
+        self.bookmarks.load_from_file()
+        self.bookmarks.load_bookmark_tree(self)
         self.scan_thread = None
         self.scan_mode = None
         self.scanning = None

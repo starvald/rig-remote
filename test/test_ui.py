@@ -188,3 +188,4 @@ def test_processs_hostname_entry(entry):
     rr.apply_config(ac)
     rr._process_hostname_entry(entry, True)
     rr.root.destroy()
+

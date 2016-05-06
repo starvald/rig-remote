@@ -22,13 +22,17 @@ TAS - Tim Sweeney - mainetim@gmail.com
 2016/05/04 - TAS - First rough draft of part of the Bookmarks class. Can only instantiate itself
                    and load and save itself to a file (if that file exists).
 
+2016/05/05 - TAS - Changed structure to create class BookmarkSet, a set of class Bookmark objects.
+                   Added methods to append and delete bookmarks, and to load a set into the
+                   UI tree.
 """
 
 
 import os
 import logging
+import Tkinter as tk
 
-from collections import MutableMapping
+from collections import MutableMapping, OrderedDict
 
 from rig_remote.constants import CBB_MODES
 from rig_remote.disk_io import IO
@@ -43,7 +47,7 @@ logger = logging.getLogger(__name__)
 bookmark_keys = ("frequency", "mode", "description", "lock")
 
 
-def this_file_exists(filename):
+def _this_file_exists(filename):
     try:
         with open(filename) as f:
             f.close()
@@ -52,17 +56,21 @@ def this_file_exists(filename):
         return None
 
 def find_existing_bookmarks_file():
+    """ See if we have an existing bookmark file, including defaults from
+        previous versions.
+        :returns: filename if an existing file is found, None otherwise.
+        """
 
-    filename = this_file_exists(os.path.join(os.getcwd(),"rig-bookmarks.csv"))
+    filename = _this_file_exists(os.path.join(os.getcwd(),"rig-bookmarks.csv"))
     if filename: return filename
-    filename = this_file_exists(os.path.join(os.path.expanduser('~'),
+    filename = _this_file_exists(os.path.join(os.path.expanduser('~'),
                                             ".rig-remote/rig-bookmarks.csv"))
     if filename: return filename
-    filename = this_file_exists(os.path.join(os.path.expanduser('~'),
+    filename = _this_file_exists(os.path.join(os.path.expanduser('~'),
                                             ".rig-remote/rig-remote-bookmarks.csv"))
     return filename
 
-class Bookmark(MutableMapping):
+class Bookmark(OrderedDict):
     """Bookmark stores an individual bookmark, each instance to contain:
            frequency: a string of digits
            mode: a string from CBB_MODE,
@@ -72,24 +80,9 @@ class Bookmark(MutableMapping):
     """
 
     def __init__(self, id_key, *args, **kwargs):
-        self.id_key = id_key
-        self.store = dict()
-        self.update(dict(*args, **kwargs))  # use the free update to set keys
-
-    def __getitem__(self, key):
-        return self.store[key]
-
-    def __setitem__(self, key, value):
-        self.store[key] = value
-
-    def __delitem__(self, key):
-        del self.store[key]
-
-    def __iter__(self):
-        return iter(self.store)
-
-    def __len__(self):
-        return len(self.store)
+        super(Bookmark, self).__init__(*args, **kwargs)
+        self.update(dict(*args, **kwargs))
+        self["id_key"] = id_key
 
 class BookmarkSet(object):
     """ BookmarkSet is a list of Bookmarks objects.
@@ -102,6 +95,10 @@ class BookmarkSet(object):
         self.filename = filename
 
     def load_from_file(self):
+        """ Load a set of bookmarks from the associated file.
+        :raises: InvalidPathError if file not found.
+        :raises: InvalidBookmark if an entry is mal-formed.
+        """
 
         bookmark_list = IO()
         try:
@@ -109,48 +106,59 @@ class BookmarkSet(object):
         except InvalidPathError:
             logger.info("No bookmarks file found, skipping.")
             return
-        count = 0
         for line in bookmark_list.row_list:
-            error = False
             if len(line) < LEN_BM:
                 line.append("O")
-            if line[BM.freq] == '':
-                error = True
-            if line[BM.mode] not in CBB_MODES:
-                error = True
-            if error == True:
+            if (line[BM.freq] == '') or (line[BM.mode] not in CBB_MODES):
                 raise InvalidBookmark
             else:
                 self.bookmarks.append(Bookmark('', zip(bookmark_keys,line)))
 
     def save_to_file(self):
+        """ Save the bookmark set to the associated file."""
 
         bookmark_list = IO()
 
         for entry in self.bookmarks:
-            btuple = (entry['frequency'], entry['mode'], entry['description'], entry['lock'])
-            bookmark_list.row_list.append(btuple)
+            bookmark_list.row_list.append(entry.values()[:4])
         bookmark_list.csv_save(self.filename, ',')
 
     def append(self, id_key, frequency, mode, description = '', lock = ''):
+        """ Append a bookmark to the set.
+        :raises: InvalidBookmark if entry is mal-formed.
+        """
 
         try:
             int(frequency)
         except (ValueError, TypeError) :
             raise InvalidBookmark
-            return
-        if mode not in CBB_MODES:
+        if (mode not in CBB_MODES) or (lock not in ('O', 'L', '')):
             raise InvalidBookmark
-            return
-        if lock not in ('O', 'L', ''):
-            raise InvalidBookmark
-            return
         item = (frequency, mode, description, lock)
         self.bookmarks.append(Bookmark(id_key, zip(bookmark_keys, item)))
 
     def delete(self, id_key):
+        """ Delete a bookmark from the set.
+        :raises: InvalidBookmarkKey if key is null string.
+        """
 
         if id_key == '':
             raise InvalidBookmarkKey
-            return
-        self.bookmarks[:] = [item for item in self.bookmarks if item.id_key != id_key]
+        self.bookmarks[:] = [entry for entry in self.bookmarks if entry["id_key"] != id_key]
+
+    def insert_bookmark_in_tree(self, entry):
+        """ Insert a bookmark entry into the UI tree.
+        """
+
+        item = self.instance.tree.insert('', tk.END, values=entry)
+        self.instance.bookmark_bg_tag(item, entry[BM.lockout])
+        return item
+
+    def load_bookmark_tree(self, instance):
+        """ Load the bookmark set into the UI tree.
+        """
+
+        self.instance = instance
+        for entry in self.bookmarks :
+            entry["id_key"] = self.insert_bookmark_in_tree(entry.values()[:4])
+
