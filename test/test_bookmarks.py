@@ -1,7 +1,7 @@
 import pytest
 import csv
 from rig_remote.bookmarks import BookmarkSet
-from rig_remote.exceptions import InvalidBookmark, InvalidBookmarkKey, InvalidPathError
+from rig_remote.exceptions import InvalidBookmark, InvalidBookmarkKey, DuplicateBookmark
 from rig_remote.ui import RigRemote
 from rig_remote.app_config import AppConfig
 import Tkinter as tk
@@ -56,14 +56,17 @@ def test_load_bookmark_tree():
     mybm = BookmarkSet("./test/test-bookmark-file.csv")
     mybm.load_from_file()
     mybm.load_bookmark_tree(rr)
+    rr.root.destroy()
 
-
-# testdata = [("100500300", "CW",,"O")]
-# @pytest.mark.parametrize("entry", testdata)
-# def test_processs_hostname_entry(entry):
-#     root = tk.Tk()
-#     ac = AppConfig("./test/test-config.file")
-#     rr = RigRemote(root, ac)
-#     rr.apply_config(ac)
-#     bookmark = BookmarkSet
-#     rr.root.destroy()
+testdata = [['100500300', 'CW','','O']]
+@pytest.mark.parametrize("entry", testdata)
+def test_processs_hostname_entry(entry):
+    root = tk.Tk()
+    ac = AppConfig("./test/test-config.file")
+    rr = RigRemote(root, ac)
+    rr.apply_config(ac)
+    mybm = BookmarkSet("./test/test-bookmark-file.csv")
+    mybm.load_from_file()
+    mybm.load_bookmark_tree(rr)
+    mybm.insert_bookmark_in_tree(entry)
+    rr.root.destroy()

@@ -37,7 +37,8 @@ from collections import MutableMapping, OrderedDict
 from rig_remote.constants import CBB_MODES
 from rig_remote.disk_io import IO
 from rig_remote.exceptions import InvalidPathError, InvalidBookmark, InvalidBookmarkKey
-
+from rig_remote.exceptions import DuplicateBookmark
+from rig_remote.utility import frequency_pp_parse, frequency_pp
 from rig_remote.constants import LEN_BM
 from rig_remote.constants import BM
 
@@ -144,13 +145,28 @@ class BookmarkSet(object):
 
         if id_key == '':
             raise InvalidBookmarkKey
-        self.bookmarks[:] = [entry for entry in self.bookmarks if entry["id_key"] != id_key]
+        self.bookmarks[:] = [entry for entry in self.bookmarks if entry['id_key'] != id_key]
 
     def insert_bookmark_in_tree(self, entry):
         """ Insert a bookmark entry into the UI tree.
         """
 
-        item = self.instance.tree.insert('', tk.END, values=entry)
+        frequency = entry[BM.freq]
+        mode = entry[BM.mode]
+        idx = tk.END
+        for item in self.instance.tree.get_children():
+            item_freq = self.instance.tree.item(item).get('values')[BM.freq]
+            parsed_item_freq = frequency_pp_parse(item_freq)
+            unicode_item_freq = parsed_item_freq.encode("UTF-8")
+            item_mode = self.instance.tree.item(item).get('values')[BM.mode]
+            if frequency < unicode_item_freq:
+                idx = self.instance.tree.index(item)
+                break
+            elif (frequency == unicode_item_freq and
+                          mode == item_mode):
+                raise DuplicateBookmark
+        entry[BM.freq] = frequency_pp(frequency)
+        item = self.instance.tree.insert('', idx, values=entry)
         self.instance.bookmark_bg_tag(item, entry[BM.lockout])
         return item
 

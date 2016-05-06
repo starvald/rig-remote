@@ -34,6 +34,9 @@ class InvalidBookmark(NonRetriableError):
 class InvalidBookmarkKey(NonRetriableError):
     pass
 
+class DuplicateBookmark(NonRetriableError):
+    pass
+
 
 # retriable custom exceptions
 

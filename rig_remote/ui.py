@@ -90,7 +90,7 @@ from rig_remote.constants import BOOKMARKS_FILE
 from rig_remote.constants import BM
 from rig_remote.constants import DEFAULT_CONFIG
 from rig_remote.constants import UI_EVENT_TIMER_DELAY
-from rig_remote.exceptions import UnsupportedScanningConfigError
+from rig_remote.exceptions import UnsupportedScanningConfigError, DuplicateBookmark
 from rig_remote.rigctl import RigCtl
 from rig_remote.scanning import ScanningTask
 from rig_remote.scanning import Scanning
@@ -1439,36 +1439,19 @@ class RigRemote(ttk.Frame):
         mode = self.params["cbb_mode"].get()
         description = self.params["txt_description"].get()
         lockout = "O"
-        # find where to insert (insertion sort)
-        idx = tk.END
-        for item in self.tree.get_children():
-            freq = self.tree.item(item).get('values')[BM.freq]
-            uni_curr_freq = frequency_pp_parse(freq)
-            curr_freq = uni_curr_freq.encode("UTF-8")
-            curr_mode = self.tree.item(item).get('values')[BM.mode]
-            if frequency < curr_freq:
-                idx = self.tree.index(item)
-                break
-            elif (frequency == curr_freq and
-                  mode == curr_mode) :
-                if not (silent) :
-                    tkMessageBox.showerror("Error", "A bookmark with the "\
-                                           "same frequency and mode "\
-                                           "already exists.", parent=self)
-                return
-        # insert
-        item = self.tree.insert('',
-                                idx,
-                                values=[frequency_pp(frequency),
-                                        mode,
-                                        description,
-                                        lockout])
-
+        entry = [frequency, mode, description, lockout]
+        try:
+            item = self.bookmarks.insert_bookmark_in_tree(entry)
+        except DuplicateBookmark:
+            if not (silent):
+                tkMessageBox.showerror("Error", "A bookmark with the "\
+                "same frequency and mode "\
+                "already exists.", parent=self)
+            return
+        self.bookmarks.append(item, frequency, mode, description, lockout)
         self.tree.selection_set(item)
         self.tree.focus(item)
         self.tree.see(item)
-        # save
-        self.bookmark("save", ",")
 
     def cb_delete(self):
         """Delete frequency from tree.
@@ -1481,6 +1464,5 @@ class RigRemote(ttk.Frame):
         item = self.tree.focus()
         if item != '':
             self.tree.delete(item)
-            # save
-        self.bookmark("save", ",")
+            self.bookmarks.delete(item)
         self._clear_form()
