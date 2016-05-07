@@ -58,9 +58,9 @@ def test_load_bookmark_tree():
     mybm.load_bookmark_tree(rr)
     rr.root.destroy()
 
-testdata = [['100500300', 'CW','','O']]
+testdata = [['100500600', 'CW','','O']]
 @pytest.mark.parametrize("entry", testdata)
-def test_processs_hostname_entry(entry):
+def test_insert_bookmark_in_tree(entry):
     root = tk.Tk()
     ac = AppConfig("./test/test-config.file")
     rr = RigRemote(root, ac)

@@ -19,28 +19,21 @@ TAS - Tim Sweeney - mainetim@gmail.com
                    Temporarily disabled freq activity logging and notification.
                    Scan call now a separate thread.
                    Added a "stop" button.
-
 2016/02/18 - TAS - Changed code from "monitor mode" fixed looping to
                    choice of variable or infinite looping.
                    Added a "pass count" field in config display.
                    Only done in bookmark scanning, still need to rework
                    frequency scanning to match. Also need to implement
                    changes in delay code (to allow for wait on signal).
-
 2016/02/19 - TAS - Added frequency scan "Stop" button.
-
 2016/02/20 - TAS - Added "wait" checkbox. See scanning.py for notes.
-
 2016/02/22 - TAS - Removed "stop" button and use a "toggle" function for
                    start/stop of scanning. Add "lock" button to UI as 
                    placeholder, but haven't implemented lockout yet.
-
 2016/02/23 - TAS - Added lockout field to treeview and coded toggle for it.
-
 2016/02/24 - TAS - Added lockout highlight code. Changed how bookmarks
                    are passed to scan thread. Added support for logging
                    scanning activity to a file.
-
 2016/03/11 - TAS - Changed program parameter storage to a dict, to make
                    validity checking and thread updating easier. Added
                    a queue to pass updated parameters to scanning thread.
@@ -51,32 +44,23 @@ TAS - Tim Sweeney - mainetim@gmail.com
                    a dict also, and then flesh out skeleton update code
                    in scanning thread. Update config code to add new 
                    checkboxes.
-
 2016/03/13 - TAS - Blank parameter fields now default to DEFAULT_CONFIG values.
                    (Github issue #21)
-
 2016/03/15 - TAS - Added more scanning option validation. Changed scan initialization to pass
                    most params in a dict.
-
 2016/03/19 - TAS - Added validation of the config file when it is applied.
-
 2016/03/20 - TAS - Added some validation of user frequency input, and of the bookmark file when it
                    is loaded.
-
 2016/03/21 - TAS - Added new checkbutton config data to config file handling methods.
-
 2016/04/12 - TAS - Added back auto-bookmarking option on frequency scan. Bookmarks are processed once the
                    scan thread has completed. Only one bookmark per frequency. (If logging enabled, all
                    occurences are logged.)
-
 2016/04/24 - TAS - Changed communications between main and scan threads to use STMessenger class, to
                    enable thread-safe notification of scan thread termination (Issue #30).
-
 2016/05/02 - TAS - Refactor is_valid_hostname(), and the methods that call it, to properly handle bad input.
-
 2016/05/04 - TAS - Cut some bookmark functionality out to start moving it to s separate class. ui.py now
                    broken.
-
+2016/05/07 - TAS - Integrate BookmarkSet into ui. Rename all callbacks to uniform pattern.
 """
 
 # import modules
@@ -90,20 +74,18 @@ from rig_remote.constants import BOOKMARKS_FILE
 from rig_remote.constants import BM
 from rig_remote.constants import DEFAULT_CONFIG
 from rig_remote.constants import UI_EVENT_TIMER_DELAY
-from rig_remote.exceptions import UnsupportedScanningConfigError, DuplicateBookmark
+from rig_remote.exceptions import UnsupportedScanningConfigError, DuplicateBookmark, InvalidBookmark
 from rig_remote.rigctl import RigCtl
 from rig_remote.scanning import ScanningTask
 from rig_remote.scanning import Scanning
 from rig_remote.stmessenger import STMessenger
-from rig_remote.utility import frequency_pp, frequency_pp_parse
+from rig_remote.utility import frequency_pp, frequency_pp_parse, is_valid_port, is_valid_hostname
 import Tkinter as tk
 import ttk
 from Tkinter import LabelFrame
 import tkMessageBox
 import threading
 import itertools
-import re
-from socket import gethostbyname
 
 
 # logging configuration
@@ -286,13 +268,13 @@ class RigRemote(ttk.Frame):
         self.log_file = None
         self.params = {}
         self.params_last_content = {}
+        self.bookmarks = BookmarkSet(self.bookmarks_file)
+        self.bookmarks.load_from_file()
         self.build(ac)
         self.params["cbb_mode"].current(0)
         self.focus_force()
         self.update()
         # bookmarks loading on start
-        self.bookmarks = BookmarkSet(self.bookmarks_file)
-        self.bookmarks.load_from_file()
         self.bookmarks.load_bookmark_tree(self)
         self.scan_thread = None
         self.scan_mode = None
@@ -375,9 +357,9 @@ class RigRemote(ttk.Frame):
                        sticky=tk.NSEW
                        )
         self.tree.bind('<<TreeviewSelect>>',
-                       self.cb_autofill_form)
+                       self._cb_autofill_form)
         self.tree.bind('<Double-Button-1>',
-                       self.cb_set_frequency)
+                       self._cb_set_frequency_button)
 
         # vertical separator between bookmarks and comands
         ttk.Frame(self).grid(row=0,
@@ -406,8 +388,8 @@ class RigRemote(ttk.Frame):
         t_txt_hostname = ToolTip(self.params["txt_hostname"],
                                  follow_mouse=1,
                                  text="Hostname to connect.")
-        self.params["txt_hostname"].bind("<Return>", self.process_entry)
-        self.params["txt_hostname"].bind("<FocusOut>", self.process_entry)
+        self.params["txt_hostname"].bind("<Return>", self._cb_general_entry)
+        self.params["txt_hostname"].bind("<FocusOut>", self._cb_general_entry)
 
         ttk.Label(self.rig_config_menu,
                   text="Port:").grid(row=2,
@@ -423,8 +405,8 @@ class RigRemote(ttk.Frame):
         t_txt_port = ToolTip(self.params["txt_port"],
                              follow_mouse=1,
                              text="Port to connect.")
-        self.params["txt_port"].bind("<Return>", self.process_entry)
-        self.params["txt_port"].bind("<FocusOut>", self.process_entry)
+        self.params["txt_port"].bind("<Return>", self._cb_general_entry)
+        self.params["txt_port"].bind("<FocusOut>", self._cb_general_entry)
 
         # horizontal separator
         ttk.Frame(self.rig_config_menu).grid(row=3,
@@ -494,7 +476,7 @@ class RigRemote(ttk.Frame):
         self.btn_add = ttk.Button(self.rig_control_menu,
                                   text="Add",
                                   width=7,
-                                  command=self.cb_add)
+                                  command=self._cb_bookmark_add_button)
         t_btn_add = ToolTip(self.btn_add,
                             follow_mouse=1,
                             text="Bookmark this frequency.")
@@ -506,7 +488,7 @@ class RigRemote(ttk.Frame):
         self.btn_delete = ttk.Button(self.rig_control_menu,
                                      text="Delete",
                                      width=7,
-                                     command=self.cb_delete)
+                                     command=self._cb_bookmark_delete_button)
         t_btn_delete = ToolTip(self.btn_delete,
                                follow_mouse=1,
                                text="Remove this frequency from bookmarks.")
@@ -518,7 +500,7 @@ class RigRemote(ttk.Frame):
         self.btn_load = ttk.Button(self.rig_control_menu,
                                    text="Get",
                                    width=7,
-                                   command=self.cb_get_frequency)
+                                   command=self._cb_get_rig_data_button)
         t_btn_load = ToolTip(self.btn_load,
                              follow_mouse=1,
                              text="Get the frequency and mode from the rig.")
@@ -556,8 +538,8 @@ class RigRemote(ttk.Frame):
         t_txt_sgn_level = ToolTip(self.params["txt_sgn_level"],
                                   follow_mouse=1,
                                   text="Signal level to trigger on.")
-        self.params["txt_sgn_level"].bind("<Return>", self.process_entry)
-        self.params["txt_sgn_level"].bind("<FocusOut>", self.process_entry)
+        self.params["txt_sgn_level"].bind("<Return>", self._cb_general_entry)
+        self.params["txt_sgn_level"].bind("<FocusOut>", self._cb_general_entry)
 
         ttk.Label(self.scanning_conf_menu,
                   text=" dBFS").grid(row=10,
@@ -585,8 +567,8 @@ class RigRemote(ttk.Frame):
                                        padx=0,
                                        column=2,
                                        sticky=tk.EW)
-        self.params["txt_delay"].bind("<Return>", self.process_entry)
-        self.params["txt_delay"].bind("<FocusOut>", self.process_entry)
+        self.params["txt_delay"].bind("<Return>", self._cb_general_entry)
+        self.params["txt_delay"].bind("<FocusOut>", self._cb_general_entry)
 
         ttk.Label(self.scanning_conf_menu,
                   text="Passes:").grid(row=14,
@@ -608,8 +590,8 @@ class RigRemote(ttk.Frame):
                                             padx=0,
                                             column=2,
                                             sticky=tk.EW)
-        self.params["txt_passes"].bind("<Return>", self.process_entry)
-        self.params["txt_passes"].bind("<FocusOut>", self.process_entry)
+        self.params["txt_passes"].bind("<Return>", self._cb_general_entry)
+        self.params["txt_passes"].bind("<FocusOut>", self._cb_general_entry)
 
         self.cb_wait = tk.BooleanVar()
         self.params["ckb_wait"] = RCCheckbutton(self.scanning_conf_menu,
@@ -627,7 +609,7 @@ class RigRemote(ttk.Frame):
                              text="Waits after having found an active"\
                                   " frequency.")
         self.params["ckb_wait"].val = self.cb_wait
-        self.cb_wait.trace("w", self.process_wait)
+        self.cb_wait.trace("w", self._cb_wait_checkbutton)
 
         self.cb_record = tk.BooleanVar()
         self.params["ckb_record"] = RCCheckbutton(self.scanning_conf_menu,
@@ -645,7 +627,7 @@ class RigRemote(ttk.Frame):
                                text="Enable the recording of signal to"\
                                     " a file.")
         self.params["ckb_record"].val = self.cb_record
-        self.cb_record.trace("w", self.process_record)
+        self.cb_record.trace("w", self._cb_record_checkbutton)
 
         self.cb_log = tk.BooleanVar()
         self.params["ckb_log"] = RCCheckbutton(self.scanning_conf_menu,
@@ -662,7 +644,7 @@ class RigRemote(ttk.Frame):
                                     columnspan=1,
                                     sticky=tk.E)
         self.params["ckb_log"].val = self.cb_log
-        self.cb_log.trace("w", self.process_log)
+        self.cb_log.trace("w", self._cb_log_checkbutton)
 
         self.freq_scanning_menu = LabelFrame(self, text="Frequency scanning")
         self.freq_scanning_menu.grid(row=3,
@@ -671,9 +653,9 @@ class RigRemote(ttk.Frame):
                                      stick=tk.NSEW)
 
         self.freq_scan_toggle = ttk.Button(self.freq_scanning_menu,
-                                          text="Start",
-                                          command=self.frequency_toggle,
-                                          )
+                                           text="Start",
+                                           command=self._cb_frequency_scan_button_toggle,
+                                           )
         t_freq_scan_toggle = ToolTip(self.freq_scan_toggle,
                                      follow_mouse=1,
                                      text="Starts a frequency scan.")
@@ -705,8 +687,8 @@ class RigRemote(ttk.Frame):
                                   follow_mouse=1,
                                   text="Lower bound of the frequency"\
                                        " band to scan.")
-        self.params["txt_range_min"].bind("<Return>", self.process_entry)
-        self.params["txt_range_min"].bind("<FocusOut>", self.process_entry)
+        self.params["txt_range_min"].bind("<Return>", self._cb_general_entry)
+        self.params["txt_range_min"].bind("<FocusOut>", self._cb_general_entry)
 
         self.params["txt_range_max"] = ttk.Entry(self.freq_scanning_menu,
                                                  name="txt_range_max",
@@ -721,8 +703,8 @@ class RigRemote(ttk.Frame):
                                   follow_mouse=1,
                                   text="Upper bound of the frequency"\
                                        " band to scan.")
-        self.params["txt_range_max"].bind("<Return>", self.process_entry)
-        self.params["txt_range_max"].bind("<FocusOut>", self.process_entry)
+        self.params["txt_range_max"].bind("<Return>", self._cb_general_entry)
+        self.params["txt_range_max"].bind("<FocusOut>", self._cb_general_entry)
 
         ttk.Label(self.freq_scanning_menu,
                   text="Interval:").grid(row=13,
@@ -745,8 +727,8 @@ class RigRemote(ttk.Frame):
                                    padx=0,
                                    column=2,
                                    sticky=tk.EW)
-        self.params["txt_interval"].bind("<Return>", self.process_entry)
-        self.params["txt_interval"].bind("<FocusOut>", self.process_entry)
+        self.params["txt_interval"].bind("<Return>", self._cb_general_entry)
+        self.params["txt_interval"].bind("<FocusOut>", self._cb_general_entry)
 
         self.cb_auto_bookmark = tk.BooleanVar()
         self.params["ckb_auto_bookmark"] = \
@@ -764,7 +746,7 @@ class RigRemote(ttk.Frame):
                                               column=0,
                                               columnspan=2)
         self.params["ckb_auto_bookmark"].val = self.cb_auto_bookmark
-        self.cb_auto_bookmark.trace("w", self.process_auto_bookmark)
+        self.cb_auto_bookmark.trace("w", self._cb_auto_bookmark_checkbutton)
 
         ttk.Frame(self.freq_scanning_menu).grid(row=17,
                                                 column=0,
@@ -793,7 +775,7 @@ class RigRemote(ttk.Frame):
 
         self.book_scan_toggle = ttk.Button(self.book_scanning_menu,
                                            text="Start",
-                                           command=self.bookmark_toggle,
+                                           command=self._cb_bookmark_scan_button_toggle,
                                            )
         t_book_scan_toggle = ToolTip(self.book_scan_toggle,
                                      follow_mouse=1,
@@ -806,8 +788,8 @@ class RigRemote(ttk.Frame):
 
         self.book_lockout = ttk.Button(self.book_scanning_menu,
                                        text="Lock",
-                                       command=self.bookmark_lockout,
-                                      )
+                                       command=self._cb_bookmark_lock_button,
+                                       )
         t_book_lockout = ToolTip(self.book_lockout,
                                  follow_mouse=1,
                                  text="Toggle skipping selected bookmark.")
@@ -845,7 +827,7 @@ class RigRemote(ttk.Frame):
                             follow_mouse=1,
                             text="This window is always on top.")
         self.ckb_top.val = self.cb_top
-        self.cb_top.trace("w", self.toggle_cb_top)
+        self.cb_top.trace("w", self._toggle_cb_top)
 
         self.cb_save_exit = tk.BooleanVar()
         self.ckb_save_exit = RCCheckbutton(self.control_menu,
@@ -888,22 +870,6 @@ class RigRemote(ttk.Frame):
         if not isinstance(event.widget, basestring) :
             event.widget.focus_set()
 
-    def _is_valid_hostname(self, hostname):
-        """ Checks if hostname is truly a valid FQDN, or IP address.
-        :param hostname:
-        :type hostname: str
-        :raises: ValueError if hostname is empty string
-        :raises: Exception based on result of gethostbyname() call
-        """
-
-        if hostname == '' :
-            raise ValueError
-        try:
-            address = gethostbyname(hostname)
-        except Exception as e:
-            logger.error("Hostname error: {}".format(e))
-            raise
-
     def apply_config(self, ac, silent = False):
         """Applies the config to the UI.
         :param ac: object instance for handling the app config
@@ -917,7 +883,7 @@ class RigRemote(ttk.Frame):
         eflag = False
         ac.read_conf()
         try:
-            self._is_valid_hostname(ac.config["hostname"])
+            is_valid_hostname(ac.config["hostname"])
         except Exception:
             self.params["txt_hostname"].insert(0, DEFAULT_CONFIG["hostname"])
             if not silent:
@@ -1010,7 +976,7 @@ class RigRemote(ttk.Frame):
             ac.write_conf()
         self.master.destroy()
 
-    def bookmark_toggle(self, icycle=itertools.cycle(["Stop", "Start"])):
+    def _cb_bookmark_scan_button_toggle(self, icycle=itertools.cycle(["Stop", "Start"])):
         """Toggle bookmark scan Start/Stop button, changing label text as
            appropriate.
         """
@@ -1031,7 +997,7 @@ class RigRemote(ttk.Frame):
             self.tree.tag_configure('unlocked', background = 'white')
             self.tree.item(item, tags = "unlocked")
 
-    def bookmark_lockout(self, icycle=itertools.cycle(["L", "O"])):
+    def _cb_bookmark_lock_button(self, icycle=itertools.cycle(["L", "O"])):
         """Toggle lockout of selected bookmark.
         """
         
@@ -1048,7 +1014,7 @@ class RigRemote(ttk.Frame):
             self.bookmark_bg_tag(self.selected_bookmark, values[BM.lockout])
 
 
-    def frequency_toggle(self, icycle=itertools.cycle(["Stop", "Start"])):
+    def _cb_frequency_scan_button_toggle(self, icycle=itertools.cycle(["Stop", "Start"])):
         """Toggle frequency scan Start/Stop button, changing label text as
            appropriate.
         """
@@ -1058,26 +1024,7 @@ class RigRemote(ttk.Frame):
             self.freq_scan_toggle.config(text = next(icycle))
             self._scan("frequency", action)
 
-
-    def is_valid_port(self, port):
-        """Checks if the provided port is a valid one.
-
-        :param: port to connect to
-        :type port: str as provided by tkinter
-        :raises: ValueError if the string can't be converted to integer and
-        if the converted ingeger is lesser than 2014 (privileged port)
-        """
-
-        try:
-            int(port)
-        except ValueError:
-            logger.error("Incorrect data: port number must be int.")
-            raise
-        if int(port) <= 1024:
-            logger.error("Privileged port used: {}".format(port))
-            raise ValueError
-
-    def _process_port_entry(self, event_value, silent = False):
+    def _cb_port_entry(self, event_value, silent = False):
         """ Process event for port number entry
         :param event_value: new port number
         :type event_value: str
@@ -1087,7 +1034,7 @@ class RigRemote(ttk.Frame):
         """
 
         try:
-            self.is_valid_port(event_value)
+            is_valid_port(event_value)
         except ValueError:
             if not silent:
                 tkMessageBox.showerror("Error",
@@ -1097,7 +1044,7 @@ class RigRemote(ttk.Frame):
             return
         self.rigctl.port=event_value
 
-    def _process_hostname_entry(self, event_value, silent = False):
+    def _cb_hostname_entry(self, event_value, silent = False):
         """ Process event for hostname entry
         :param event_value: new hostname
         :type event_value: str
@@ -1106,7 +1053,7 @@ class RigRemote(ttk.Frame):
         :return:
         """
         try:
-            self._is_valid_hostname(event_value)
+            is_valid_hostname(event_value)
         except Exception:
             if not silent:
                 tkMessageBox.showerror("Error",
@@ -1115,7 +1062,7 @@ class RigRemote(ttk.Frame):
         self.rigctl.hostname=event_value
 
 
-    def process_entry(self, event, silent = False) :
+    def _cb_general_entry(self, event, silent = False) :
         """Process a change in an entry widget. Check validity of
            numeric data. If empty field, offer the default or return to
            edit. If not valid, display a message and reset
@@ -1152,10 +1099,10 @@ class RigRemote(ttk.Frame):
                     event.widget.focus_set()
                     return
         if event_name == "txt_hostname":
-            self._process_hostname_entry(event_value)
+            self._cb_hostname_entry(event_value)
             return
         if event_name == "txt_port":
-            self._process_port_entry(event_value)
+            self._cb_port_entry(event_value)
             return
         try :
             event_value_int = int(event.widget.get().replace(',',''))
@@ -1170,16 +1117,16 @@ class RigRemote(ttk.Frame):
             event_list = (event_name, event_value_int)
             self.scanq.send_event_update(event_list)
 
-    def process_wait(self, *args):
+    def _cb_wait_checkbutton(self, *args):
         """ Methods to handle checkbutton updates
 
         :param *args: ignored
         :returns: None
         """
         event_list = ("ckb_wait", self.cb_wait.get())
-        self.process_checkbutton(event_list)
+        self._process_checkbutton_cb(event_list)
 
-    def process_record(self, *args) :
+    def _cb_record_checkbutton(self, *args) :
         """ Methods to handle checkbutton updates
 
         :param *args: ignored
@@ -1187,9 +1134,9 @@ class RigRemote(ttk.Frame):
         """
 
         event_list = ("ckb_record", self.cb_record.get())
-        self.process_checkbutton(event_list)
+        self._process_checkbutton_cb(event_list)
 
-    def process_log(self, *args) :
+    def _cb_log_checkbutton(self, *args) :
         """ Methods to handle checkbutton updates
 
         :param *args: ignored
@@ -1197,9 +1144,9 @@ class RigRemote(ttk.Frame):
         """
 
         event_list = ("ckb_log", self.cb_log.get())
-        self.process_checkbutton(event_list)
+        self._process_checkbutton_cb(event_list)
 
-    def process_auto_bookmark(self, *args) :
+    def _cb_auto_bookmark_checkbutton(self, *args) :
         """ Methods to handle checkbutton updates
 
         :param *args: ignored
@@ -1207,9 +1154,9 @@ class RigRemote(ttk.Frame):
         """
 
         event_list = ("ckb_auto_bookmark", self.cb_auto_bookmark.get())
-        self.process_checkbutton(event_list)
+        self._process_checkbutton_cb(event_list)
 
-    def process_checkbutton(self, event_list) :
+    def _process_checkbutton_cb(self, event_list) :
         """Take the event_list generated by caller and push it on the queue.
 
         :param event_list: name of param to update, value of param
@@ -1220,18 +1167,57 @@ class RigRemote(ttk.Frame):
             self.scanq.send_event_update(event_list)
             self.params_last_content[event_list[0]] = event_list[1]
 
-    def check_scanthread(self):
+    def _cb_bookmark_add_button(self, silent=False):
+        """Callback for UI bookmark add button. Appends the new bookmark
+           to the bookmark set and inserts it in the UI tree.
+
+        :param silent: if True suppress messageboxes
+        :type silent: boolean
+        :raises: none
+        :returns: none
+        """
+
+        # get values
+        frequency = frequency_pp_parse(self.params['txt_frequency'].get())
+        mode = self.params['cbb_mode'].get()
+        description = self.params['txt_description'].get()
+        lockout = 'O'
+        entry = [frequency, mode, description, lockout]
+        try:
+            self.bookmarks.append('test', frequency, mode, description, lockout)
+        except InvalidBookmark:
+            if not (silent):
+                self.bookmarks.delete('test')
+                tkMessageBox.showerror("Error",
+                                       "Invalid value in Frequency field.")
+                self.params["txt_frequency"].focus_set()
+            return
+        try:
+            item = self.bookmarks.insert_bookmark_in_tree(entry)
+        except DuplicateBookmark:
+            if not (silent):
+                tkMessageBox.showerror("Error", "A bookmark with the " \
+                                                "same frequency and mode " \
+                                                "already exists.", parent=self)
+            return
+        self.bookmarks.update_id_key('test', item)
+        self.bookmarks.save_to_file()
+        self.tree.selection_set(item)
+        self.tree.focus(item)
+        self.tree.see(item)
+
+    def _check_scanthread(self):
         """Check it the scan thread has sent us a termination signal.
         :returns: None
         """
         if self.scanq.check_end_of_scan():
             if self.scan_mode == 'frequency':
-                self.frequency_toggle()
+                self._cb_frequency_scan_button_toggle()
             else:
-                self.bookmark_toggle()
+                self._cb_bookmark_scan_button_toggle()
         else:
             if self.scan_thread != None:
-                self.after(UI_EVENT_TIMER_DELAY, self.check_scanthread)
+                self.after(UI_EVENT_TIMER_DELAY, self._check_scanthread)
 
     def _scan(self, mode, action):
         """Wrapper around the scanning class instance. Creates the task
@@ -1276,7 +1262,7 @@ class RigRemote(ttk.Frame):
                 if not silent:
                     tkMessageBox.showerror("Error",
                                        "No bookmarks to scan.")
-                self.bookmark_toggle()
+                self._cb_bookmark_scan_button_toggle()
             else:
                 self.scan_mode = mode
                 scanq = self.scanq
@@ -1294,7 +1280,7 @@ class RigRemote(ttk.Frame):
                 self.scan_thread = threading.Thread(target = self.scanning.scan,
                                                     args = (task,))
                 self.scan_thread.start()
-                self.after(0, self.check_scanthread)
+                self.after(0, self._check_scanthread)
 
     def _new_activity_message(self, nbl):
         """Provides a little formatting from the new bookmark list.
@@ -1313,7 +1299,7 @@ class RigRemote(ttk.Frame):
         logger.warning(message)
         return message
 
-    def _clear_form(self):
+    def _clear_bookmark_form(self):
         """Clear the form.. nothing more.
 
         :param: none
@@ -1326,7 +1312,7 @@ class RigRemote(ttk.Frame):
         self.params["cbb_mode"].delete(0, tk.END)
 
     def _add_new_bookmarks(self, nbl):
-        """Fill in the data, calls uses cb_add() and calls clear_form.
+        """Fill in the data, calls uses process_ui_add() and calls clear_form.
 
         :param nbl: list of new frequencies to bookmark
         :type nbl: list
@@ -1334,7 +1320,7 @@ class RigRemote(ttk.Frame):
         :returns: none
         """
 
-        self._clear_form()
+        self._clear_bookmark_form()
         for nb in nbl:
             self.params["txt_description"].insert(0,
                                                   "activity on {}".format(nb["time"]))
@@ -1342,10 +1328,10 @@ class RigRemote(ttk.Frame):
                                                 frequency_pp(str(nb["freq"])))
             self.params["cbb_mode"].insert(0,nb["mode"])
             # adding bookmark to the list
-            self.cb_add(True)
-            self._clear_form()
+            self._cb_bookmark_add_button(True)
+            self._clear_bookmark_form()
 
-    def toggle_cb_top(self, *args):
+    def _toggle_cb_top(self, *args):
         """Set window property to be always on top.
 
         :param: none
@@ -1355,7 +1341,7 @@ class RigRemote(ttk.Frame):
 
         self.master.attributes("-topmost", self.ckb_top.val.get())
 
-    def cb_get_frequency(self, silent = False):
+    def _cb_get_rig_data_button(self, silent = False):
         """Get current rig frequency and mode.
 
         :param silent: suppress messagebox
@@ -1365,7 +1351,7 @@ class RigRemote(ttk.Frame):
         """
 
         # clear fields
-        self._clear_form()
+        self._clear_bookmark_form()
         try:
             frequency = self.rigctl.get_frequency()
             mode = self.rigctl.get_mode()
@@ -1379,7 +1365,7 @@ class RigRemote(ttk.Frame):
                                    "Could not connect to rig.\n%s" % err,
                                    parent=self)
 
-    def cb_set_frequency(self, event, silent = False):
+    def _cb_set_frequency_button(self, event, silent = False):
         """Set the rig frequency and mode.
 
         :param event: not used?
@@ -1401,7 +1387,7 @@ class RigRemote(ttk.Frame):
                                    "Could not set frequency.\n%s" % err,
                                    parent=self)
 
-    def cb_autofill_form(self, event):
+    def _cb_autofill_form(self, event):
         """Auto-fill bookmark fields with details
         of currently selected Treeview entry.
 
@@ -1413,47 +1399,12 @@ class RigRemote(ttk.Frame):
 
         self.selected_bookmark = self.tree.focus()
         values = self.tree.item(self.selected_bookmark).get('values')
-        self._clear_form()
+        self._clear_bookmark_form()
         self.params["cbb_mode"].insert(0, values[1])
         self.params["txt_frequency"].insert(0, values[0])
         self.params["txt_description"].insert(0, values[2])
 
-    def cb_add(self, silent = False):
-        """Add frequency to tree and saves the bookmarks.
-
-        :param: none
-        :raises: none
-        :returns: none
-        """
-
-        # get values
-        frequency = frequency_pp_parse(self.params["txt_frequency"].get())
-        try:
-            int(frequency)
-        except (ValueError, TypeError):
-            if not (silent) :
-                tkMessageBox.showerror("Error",
-                                       "Invalid value in Frequency field.")
-                self.params["txt_frequency"].focus_set()
-            return
-        mode = self.params["cbb_mode"].get()
-        description = self.params["txt_description"].get()
-        lockout = "O"
-        entry = [frequency, mode, description, lockout]
-        try:
-            item = self.bookmarks.insert_bookmark_in_tree(entry)
-        except DuplicateBookmark:
-            if not (silent):
-                tkMessageBox.showerror("Error", "A bookmark with the "\
-                "same frequency and mode "\
-                "already exists.", parent=self)
-            return
-        self.bookmarks.append(item, frequency, mode, description, lockout)
-        self.tree.selection_set(item)
-        self.tree.focus(item)
-        self.tree.see(item)
-
-    def cb_delete(self):
+    def _cb_bookmark_delete_button(self):
         """Delete frequency from tree.
 
         :param: none
@@ -1465,4 +1416,5 @@ class RigRemote(ttk.Frame):
         if item != '':
             self.tree.delete(item)
             self.bookmarks.delete(item)
-        self._clear_form()
+        self.bookmarks.save_to_file()
+        self._clear_bookmark_form()

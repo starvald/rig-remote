@@ -20,11 +20,17 @@ Copyright (c) 2016 Tim Sweeney
 TAS - Tim Sweeney - mainetim@gmail.com
 
 2016/05/04 - TAS - Moved frequency_pp and frequency_pp_parse here.
+2016/05/07 - TAS - Moved is_valid_hostname and is_valid_port here.
 
 """
 
 
 import re
+from socket import gethostbyname
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 def frequency_pp(frequency):
     """Filter invalid chars and add thousands separator.
@@ -53,3 +59,39 @@ def frequency_pp_parse(frequency):
         return (nocommas)
     else:
         return (None)
+
+
+def is_valid_port(port):
+    """Checks if the provided port is a valid one.
+
+    :param: port to connect to
+    :type port: str as provided by tkinter
+    :raises: ValueError if the string can't be converted to integer and
+    if the converted ingeger is lesser than 2014 (privileged port)
+    """
+
+    try:
+        int(port)
+    except ValueError:
+        logger.error("Incorrect data: port number must be int.")
+        raise
+    if int(port) <= 1024:
+        logger.error("Privileged port used: {}".format(port))
+        raise ValueError
+
+def is_valid_hostname(hostname):
+    """ Checks if hostname is truly a valid FQDN, or IP address.
+    :param hostname:
+    :type hostname: str
+    :raises: ValueError if hostname is empty string
+    :raises: Exception based on result of gethostbyname() call
+    """
+
+    if hostname == '':
+        raise ValueError
+    try:
+        address = gethostbyname(hostname)
+    except Exception as e:
+        logger.error("Hostname error: {}".format(e))
+        raise
+

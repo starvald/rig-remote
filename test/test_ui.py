@@ -5,7 +5,12 @@ import pytest
 import socket
 from rig_remote.ui import RigRemote
 from rig_remote.app_config import AppConfig
+from rig_remote.utility import is_valid_hostname, is_valid_port
 import Tkinter as tk
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 #def test_bad_signal_conf():
 #    root = tk.Tk()
@@ -118,7 +123,7 @@ def test_load_conf13():
     rr.root.destroy()
 
 
-def test_load_conf13():
+def test_load_conf14():
     root = tk.Tk()
     ac = AppConfig("./test/test-config.file")
     rr = RigRemote(root, ac)
@@ -126,7 +131,7 @@ def test_load_conf13():
     assert(rr.params["ckb_auto_bookmark"].is_checked() == 0)
     rr.root.destroy()
 
-def test_load_conf14():
+def test_load_conf15():
     root = tk.Tk()
     ac = AppConfig("./test/test-config.file")
     rr = RigRemote(root, ac)
@@ -134,7 +139,7 @@ def test_load_conf14():
     assert (rr.params["txt_description"].get() == "")
     rr.root.destroy()
 
-def test_load_conf15():
+def test_load_conf16():
     root = tk.Tk()
     ac = AppConfig("./test/test-config.file")
     rr = RigRemote(root, ac)
@@ -142,7 +147,7 @@ def test_load_conf15():
     assert (rr.params["cbb_mode"].current() == 0)
     rr.root.destroy()
 
-def test_load_conf16():
+def test_load_conf17():
     root = tk.Tk()
     ac = AppConfig("./test/test-config.file")
     rr = RigRemote(root, ac)
@@ -153,19 +158,15 @@ def test_load_conf16():
 testdata = [("80"), ("test"), ("1024")]
 @pytest.mark.parametrize("port", testdata)
 def test_ko_is_valid_port(port):
-    root = tk.Tk()
-    ac = AppConfig("./test/test-config.file")
-    rr = RigRemote(root, ac)
     with pytest.raises(ValueError):
-        rr.is_valid_port(port)
-    rr.root.destroy()
+        is_valid_port(port)
 
 
 def test_ok_is_valid_port():
     root = tk.Tk()
     ac = AppConfig("./test/test-config.file")
     rr = RigRemote(root, ac)
-    assert(rr.is_valid_port("1025") == None)
+    assert(is_valid_port("1025") == None)
     rr.root.destroy()
 
 testdata = [(""), ("string"), [("123,333")]]
@@ -176,7 +177,7 @@ def test_cb_add(entry):
     rr = RigRemote(root, ac)
     rr.apply_config(ac)
     rr.params["txt_frequency"].insert(0, entry)
-    rr.cb_add(True)
+    rr._cb_bookmark_add_button(True)
     rr.root.destroy()
 
 testdata = [(""), ("string"), [("123.123"), ("123.123."), ("google.com"), ("127.0.0.1")]]
@@ -186,6 +187,6 @@ def test_processs_hostname_entry(entry):
     ac = AppConfig("./test/test-config.file")
     rr = RigRemote(root, ac)
     rr.apply_config(ac)
-    rr._process_hostname_entry(entry, True)
+    rr._cb_hostname_entry(entry, True)
     rr.root.destroy()
 

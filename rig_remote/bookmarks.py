@@ -147,6 +147,14 @@ class BookmarkSet(object):
             raise InvalidBookmarkKey
         self.bookmarks[:] = [entry for entry in self.bookmarks if entry['id_key'] != id_key]
 
+    def update_id_key(self, id_key, new_id_key):
+
+        entry = next((item for item in self.bookmarks if item['id_key'] == id_key), None)
+        if entry == None:
+            raise InvalidBookmarkKey
+        else:
+            entry['id_key'] = new_id_key
+
     def insert_bookmark_in_tree(self, entry):
         """ Insert a bookmark entry into the UI tree.
         """
@@ -177,4 +185,6 @@ class BookmarkSet(object):
         self.instance = instance
         for entry in self.bookmarks :
             entry["id_key"] = self.insert_bookmark_in_tree(entry.values()[:4])
+
+
 
