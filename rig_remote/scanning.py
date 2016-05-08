@@ -94,7 +94,8 @@ class ScanningTask(object):
                  bookmarks,
                  nbl,
                  pass_params,
-                 rig_controller):
+                 rig_controller,
+                 log_filename):
         """We do some checks to see if we are good to go with the scan.
 
         :param scanq: queue used send/receive events from the UI.
@@ -115,6 +116,7 @@ class ScanningTask(object):
         self.new_bookmark_list = nbl
         self.bookmarks = bookmarks
         self.scanq = scanq
+        self.log_filename = log_filename
 
         if mode.lower() not in SUPPORTED_SCANNING_MODES:
             logger.error("Unsupported scanning mode "\
@@ -213,7 +215,7 @@ class Scanning(object):
         """
 
         log = LogFile()
-        log.open()
+        log.open(task.log_filename)
         if task and task.mode.lower() == "bookmarks":
             task = self._bookmarks(task, log)
         elif task and task.mode.lower() == "frequency":

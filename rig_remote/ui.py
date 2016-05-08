@@ -82,6 +82,7 @@ from rig_remote.stmessenger import STMessenger
 from rig_remote.utility import frequency_pp, frequency_pp_parse, is_valid_port, is_valid_hostname
 import Tkinter as tk
 import ttk
+import os
 from Tkinter import LabelFrame
 import tkMessageBox
 import threading
@@ -264,10 +265,11 @@ class RigRemote(ttk.Frame):
     def __init__(self, root, ac):
         ttk.Frame.__init__(self, root)
         self.root = root
-        self.bookmarks_file = BOOKMARKS_FILE
-        self.log_file = None
         self.params = {}
         self.params_last_content = {}
+        self.alt_files = {}
+        self.bookmarks_file = ac.config["bookmark_filename"]
+        self.log_file = ac.config["log_filename"]
         self.bookmarks = BookmarkSet(self.bookmarks_file)
         self.bookmarks.load_from_file()
         self.build(ac)
@@ -931,6 +933,9 @@ class RigRemote(ttk.Frame):
                 self.ckb_top.invoke()
         self.rigctl = RigCtl(self.params["txt_hostname"].get(),
                              self.params["txt_port"].get())
+        for key in ('alternate_config_file', 'alternate_bookmark_file', 'alternate_log_file'):
+            self.alt_files[key] = key in ac.config
+            ac.config.pop(key, None)
         # Here we create a copy of the params dict to use when
         # checking validity of new input
         for key in self.params :
@@ -960,9 +965,11 @@ class RigRemote(ttk.Frame):
         ac.config["save_exit"] = self.ckb_save_exit.get_str_val()
         ac.config["auto_bookmark"] = \
                                 self.params["ckb_auto_bookmark"].get_str_val()
+        ac.config["bookmark_filename"] = self.bookmarks_file
+        ac.config["log_filename"] = self.log_file
         return ac
 
-    def shutdown(self,ac):
+    def shutdown(self,ac, silent = False):
         """Here we quit. Before exiting, if save_exit checkbox is checked
         we save the configuration of the app and the bookmarks.
         :param ac: object that represent the UI configuration
@@ -971,8 +978,21 @@ class RigRemote(ttk.Frame):
         """
 
         if self.cb_save_exit.get():
-            self.bookmark("save", ",")
+            if ((not self.alt_files['alternate_bookmark_file']) and
+                os.path.basename(self.bookmarks_file) == 'rig-bookmarks.csv'):
+                old_bookmark_path = self.bookmarks_file
+                self.bookmarks_file = os.path.join(os.path.expanduser('~'),
+                                            '.rig-remote/rig-remote-bookmarks.csv')
+                self.bookmark("save", ",")
+                try:
+                    os.remove(old_bookmark_path)
+                except OSError:
+                    logger.info("Failed to remove old bookmark file: %s", old_bookmark_path)
             ac = self._store_conf(ac)
+            if ((not self.alt_files['alternate_config_file']) and
+                os.path.join(os.path.split(os.path.dirname(ac.config_file))[1],
+                os.path.basename(ac.config_file)) == ".rig_remote/rig_remote.conf"):
+                ac.old_path = True
             ac.write_conf()
         self.master.destroy()
 
@@ -1275,7 +1295,8 @@ class RigRemote(ttk.Frame):
                                     bookmarks,
                                     nbl,
                                     pass_params,
-                                    self.rigctl)
+                                    self.rigctl,
+                                    self.log_file)
                 self.scanning = Scanning()
                 self.scan_thread = threading.Thread(target = self.scanning.scan,
                                                     args = (task,))

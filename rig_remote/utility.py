@@ -95,3 +95,15 @@ def is_valid_hostname(hostname):
         logger.error("Hostname error: {}".format(e))
         raise
 
+def this_file_exists(filename):
+    """Test if a file will open.
+    :param filename:
+    :type filename: str
+    :returns: filename if open was successful, None otherwise
+    """
+    try:
+        with open(filename) as f:
+            f.close()
+            return(filename)
+    except IOError:
+        return None
