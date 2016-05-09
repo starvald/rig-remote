@@ -21,12 +21,11 @@ TAS - Tim Sweeney - mainetim@gmail.com
 
 2016/05/04 - TAS - First rough draft of part of the Bookmarks class. Can only instantiate itself
                    and load and save itself to a file (if that file exists).
-
 2016/05/05 - TAS - Changed structure to create class BookmarkSet, a set of class Bookmark objects.
                    Added methods to append and delete bookmarks, and to load a set into the
                    UI tree.
+2016/05/08 - TAS - Delete duplicate bookmarks while loading the tree.
 """
-
 
 import os
 import logging
@@ -102,6 +101,7 @@ class BookmarkSet(object):
         """
 
         bookmark_list = IO()
+        count = 0
         try:
             bookmark_list.csv_load(self.filename, ',')
         except InvalidPathError:
@@ -113,7 +113,8 @@ class BookmarkSet(object):
             if (line[BM.freq] == '') or (line[BM.mode] not in CBB_MODES):
                 raise InvalidBookmark
             else:
-                self.bookmarks.append(Bookmark('', zip(bookmark_keys,line)))
+                count += 1
+                self.bookmarks.append(Bookmark('BM'+'{:03}'.format(count), zip(bookmark_keys,line)))
 
     def save_to_file(self):
         """ Save the bookmark set to the associated file."""
@@ -165,7 +166,7 @@ class BookmarkSet(object):
         for item in self.instance.tree.get_children():
             item_freq = self.instance.tree.item(item).get('values')[BM.freq]
             parsed_item_freq = frequency_pp_parse(item_freq)
-            unicode_item_freq = parsed_item_freq.encode("UTF-8")
+            unicode_item_freq = parsed_item_freq.encode('UTF-8')
             item_mode = self.instance.tree.item(item).get('values')[BM.mode]
             if frequency < unicode_item_freq:
                 idx = self.instance.tree.index(item)
@@ -183,8 +184,9 @@ class BookmarkSet(object):
         """
 
         self.instance = instance
-        for entry in self.bookmarks :
-            entry["id_key"] = self.insert_bookmark_in_tree(entry.values()[:4])
-
-
-
+        for entry in self.bookmarks[:]:
+            try:
+                entry['id_key'] = self.insert_bookmark_in_tree(entry.values()[:4])
+            except DuplicateBookmark:
+                logger.warning("Duplicate bookmark found: {}".format(entry.values()[:4]))
+                self.delete(entry['id_key'])

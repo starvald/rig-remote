@@ -61,6 +61,7 @@ TAS - Tim Sweeney - mainetim@gmail.com
 2016/05/04 - TAS - Cut some bookmark functionality out to start moving it to s separate class. ui.py now
                    broken.
 2016/05/07 - TAS - Integrate BookmarkSet into ui. Rename all callbacks to uniform pattern.
+2016/05/08 - TAS - Merge from devel: handle config, initial bookmarks, and log file names correctly.
 """
 
 # import modules
@@ -70,7 +71,6 @@ import logging
 from rig_remote.bookmarks import BookmarkSet
 from rig_remote.constants import SUPPORTED_SCANNING_ACTIONS
 from rig_remote.constants import CBB_MODES
-from rig_remote.constants import BOOKMARKS_FILE
 from rig_remote.constants import BM
 from rig_remote.constants import DEFAULT_CONFIG
 from rig_remote.constants import UI_EVENT_TIMER_DELAY

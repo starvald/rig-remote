@@ -21,7 +21,7 @@ TAS - Tim Sweeney - mainetim@gmail.com
 
 2016/02/24 - TAS - Added log file class to handle logging scanning
                    activity to a file.
-
+2016/05/08 - TAS - Handle log filename correctly.
 """
 
 import csv

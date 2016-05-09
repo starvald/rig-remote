@@ -51,6 +51,7 @@ TAS - Tim Sweeney - mainetim@gmail.com
 2106/04/27 - TAS - Rewrote bookmark scanning to streamline logic (slightly), and include additional
                    opportunities for queue processing. Added _queue_sleep method for queue processing
                    while pausing. Related to Issue #43.
+2016/05/08 - TAS - Handle log filename correctly.
 """
 
 # import modules
