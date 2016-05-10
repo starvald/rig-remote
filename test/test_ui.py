@@ -7,10 +7,7 @@ from rig_remote.ui import RigRemote
 from rig_remote.app_config import AppConfig
 from rig_remote.utility import is_valid_hostname, is_valid_port
 import Tkinter as tk
-
-import logging
-
-logger = logging.getLogger(__name__)
+from socket import gaierror
 
 #def test_bad_signal_conf():
 #    root = tk.Tk()
@@ -190,3 +187,14 @@ def test_cb_hostname_entry(entry):
     rr._cb_hostname_entry(entry, True)
     rr.root.destroy()
 
+
+def test_ko_1_is_valid_hostname():
+    with pytest.raises(gaierror):
+        is_valid_hostname(" ")
+
+def test_ko_2_is_valid_hostname():
+    with pytest.raises(ValueError):
+        is_valid_hostname("")
+
+def test_ok_1_is_valid_hostname():
+    is_valid_hostname("www.google.com")
