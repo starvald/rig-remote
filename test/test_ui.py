@@ -169,9 +169,9 @@ def test_ok_is_valid_port():
     assert(is_valid_port("1025") == None)
     rr.root.destroy()
 
-testdata = [(""), ("string"), [("123,333")]]
+testdata = ['', 'string', '123,333']
 @pytest.mark.parametrize("entry", testdata)
-def test_cb_add(entry):
+def test_cb_bookmark_add_button(entry):
     root = tk.Tk()
     ac = AppConfig("./test/test-config.file")
     rr = RigRemote(root, ac)
@@ -180,9 +180,9 @@ def test_cb_add(entry):
     rr._cb_bookmark_add_button(True)
     rr.root.destroy()
 
-testdata = [(""), ("string"), [("123.123"), ("123.123."), ("google.com"), ("127.0.0.1")]]
+testdata = ['', 'string', '123.123', '123.123.', 'google.com', '127.0.0.1']
 @pytest.mark.parametrize("entry", testdata)
-def test_processs_hostname_entry(entry):
+def test_cb_hostname_entry(entry):
     root = tk.Tk()
     ac = AppConfig("./test/test-config.file")
     rr = RigRemote(root, ac)
