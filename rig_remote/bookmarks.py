@@ -94,6 +94,9 @@ class BookmarkSet(object):
         self.bookmarks = []
         self.filename = filename
 
+    def __len__(self):
+        return len(self.bookmarks)
+
     def load_from_file(self):
         """ Load a set of bookmarks from the associated file.
         :raises: InvalidPathError if file not found.

@@ -48,6 +48,16 @@ def test_bokmark_delete():
     with pytest.raises(InvalidBookmarkKey):
         mybm.delete('')
 
+def test_bokmark_delete_all():
+    mybm = BookmarkSet("./test/test-bookmark-file.csv")
+    mybm.load_from_file()
+    mybm.delete('BM001')
+    mybm.delete('BM002')
+    mybm.delete('BM003')
+    assert(len(mybm) == 0)
+    mybm.delete('BM001')
+    mybm.delete('BM111')
+
 def test_load_bookmark_tree():
     root = tk.Tk()
     ac = AppConfig("./test/test-config.file")
@@ -69,4 +79,6 @@ def test_insert_bookmark_in_tree(entry):
     mybm.load_from_file()
     mybm.load_bookmark_tree(rr)
     mybm.insert_bookmark_in_tree(entry)
+    with(pytest.raises(DuplicateBookmark)):
+        mybm.insert_bookmark_in_tree(entry)
     rr.root.destroy()

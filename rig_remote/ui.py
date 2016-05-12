@@ -79,7 +79,7 @@ from rig_remote.rigctl import RigCtl
 from rig_remote.scanning import ScanningTask
 from rig_remote.scanning import Scanning
 from rig_remote.stmessenger import STMessenger
-from rig_remote.utility import frequency_pp, frequency_pp_parse, is_valid_port, is_valid_hostname
+from rig_remote.utility import frequency_pp, frequency_pp_parse, is_valid_port, is_valid_hostname, ToolTip
 import Tkinter as tk
 import ttk
 import os
