@@ -19,6 +19,7 @@ TAS - Tim Sweeney - mainetim@gmail.com
                    Temporarily disabled freq activity logging and notification.
                    Scan call now a separate thread.
                    Added a "stop" button.
+
 2016/02/18 - TAS - Changed code from "monitor mode" fixed looping to
                    choice of variable or infinite looping.
                    Added a "pass count" field in config display.
@@ -62,6 +63,7 @@ TAS - Tim Sweeney - mainetim@gmail.com
                    broken.
 2016/05/07 - TAS - Integrate BookmarkSet into ui. Rename all callbacks to uniform pattern.
 2016/05/08 - TAS - Merge from devel: handle config, initial bookmarks, and log file names correctly.
+2016/05/30 - TAS - Stripped out old path support.
 """
 
 # import modules
@@ -88,6 +90,7 @@ import tkMessageBox
 import threading
 import itertools
 
+from rig_remote.stmessenger import STMessenger
 
 # logging configuration
 logger = logging.getLogger(__name__)
@@ -798,9 +801,6 @@ class RigRemote(ttk.Frame):
                 self.ckb_top.invoke()
         self.rigctl = RigCtl(self.params["txt_hostname"].get(),
                              self.params["txt_port"].get())
-        for key in ('alternate_config_file', 'alternate_bookmark_file', 'alternate_log_file'):
-            self.alt_files[key] = key in ac.config
-            ac.config.pop(key, None)
         # Here we create a copy of the params dict to use when
         # checking validity of new input
         for key in self.params :
@@ -843,21 +843,8 @@ class RigRemote(ttk.Frame):
         """
 
         if self.cb_save_exit.get():
-            if ((not self.alt_files['alternate_bookmark_file']) and
-                os.path.basename(self.bookmarks_file) == 'rig-bookmarks.csv'):
-                old_bookmark_path = self.bookmarks_file
-                self.bookmarks_file = os.path.join(os.path.expanduser('~'),
-                                            '.rig-remote/rig-remote-bookmarks.csv')
-                self.bookmark("save", ",")
-                try:
-                    os.remove(old_bookmark_path)
-                except OSError:
-                    logger.info("Failed to remove old bookmark file: %s", old_bookmark_path)
+            self.bookmark("save", ",")
             ac = self._store_conf(ac)
-            if ((not self.alt_files['alternate_config_file']) and
-                os.path.join(os.path.split(os.path.dirname(ac.config_file))[1],
-                os.path.basename(ac.config_file)) == ".rig_remote/rig_remote.conf"):
-                ac.old_path = True
             ac.write_conf()
         self.master.destroy()
 

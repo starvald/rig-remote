@@ -38,6 +38,7 @@ TAS - Tim Sweeney - mainetim@gmail.com
                    are passed so that on-the-fly lockout will work. Added
                    logging activity to file.
 2016/03/11 - TAS - Added skeleton code to process queue.
+                   Still to do: change parameter passing to dict.
 2016/03/13 - TAS - Strip the scan parameters strings completely of
                    non-numerics to avoid ValueExceptions.
 2016/03/15 - TAS - Recoded to pass most parameters in a dict, which also stores
@@ -51,6 +52,7 @@ TAS - Tim Sweeney - mainetim@gmail.com
 2106/04/27 - TAS - Rewrote bookmark scanning to streamline logic (slightly), and include additional
                    opportunities for queue processing. Added _queue_sleep method for queue processing
                    while pausing. Related to Issue #43.
+2016/05/30 - TAS - Small fixes and modify _create_new_bookmark for multiple uses.
 2016/05/08 - TAS - Handle log filename correctly.
 """
 
@@ -66,8 +68,9 @@ from rig_remote.constants import NO_SIGNAL_DELAY
 from rig_remote.constants import MIN_INTERVAL
 from rig_remote.constants import MONITOR_MODE_DELAY
 from rig_remote.constants import BM
-from rig_remote.exceptions import UnsupportedScanningConfigError
+from rig_remote.exceptions import UnsupportedScanningConfigError, InvalidScanModeError
 from rig_remote.stmessenger import STMessenger
+import socket
 import logging
 import time
 import re
@@ -196,6 +199,7 @@ class Scanning(object):
         :type: Scanningtask object
         :returns: None
         """
+
         length = task.params['delay']
         while True:
             if task.scanq.update_queued():
@@ -215,6 +219,10 @@ class Scanning(object):
         :returns: updates the scanning task object with the new activity found
         """
 
+        if task.mode.lower() not in SUPPORTED_SCANNING_MODES:
+            logger.exception("Invalid scan mode provided:{}".format(task.mode))
+            raise InvalidScanModeError
+
         log = LogFile()
         log.open(task.log_filename)
         if task and task.mode.lower() == "bookmarks":
@@ -222,6 +230,41 @@ class Scanning(object):
         elif task and task.mode.lower() == "frequency":
             task = self._frequency(task, log)
         log.close()
+
+    def _frequency_tune(self, task, freq):
+        """helper function called inside _frequency().
+        This is for reducing the code inside the while true loops
+        """
+
+
+        logger.info("Tuning to {}".format(freq))
+
+        try:
+            task.rig.set_frequency(freq)
+        except ValueError:
+            logger.warning ("Bad frequency parameter passed.")
+            raise
+        except (socket.error, socket.timeout):
+            logger.warning("Communications Error!")
+            self.scan_active = False
+            raise
+        time.sleep(TIME_WAIT_FOR_TUNE)
+
+    def _create_new_bookmark(self, task, freq):
+        nbm = {}
+        nbm["freq"] = freq
+        nbm["mode"] = task.rig.get_mode()
+        nbm["time"] = datetime.datetime.utcnow().strftime("%a %b %d %H:%M %Y")
+        return nbm
+
+    def _start_recording(self):
+        task.rig.start_recording()
+        logger.info("Recording started.")
+
+    def _stop_recording(self):
+        task.rig.stop_recording()
+        logger.info("Recording stopped.")
+
 
     def _frequency(self, task, log):
         """Performs a frequency scan, using the task obj for finding
@@ -232,49 +275,47 @@ class Scanning(object):
         :raises: none
         :returns: updates the scanning task object with the new activity found
         """
+
         level = []
         pass_count = task.params["passes"]
+        interval = _khertz_to_hertz(task.params["interval"])
         while self.scan_active:
             freq = task.params["range_min"]
             # If the range is negative, silently bail...
             if freq > task.params["range_max"]:
                 self.scan_active = False
-            interval = _khertz_to_hertz(task.params["interval"])
             while freq < task.params["range_max"]:
                 if self._process_queue(task):
                     freq = task.params["range_min"]
                     pass_count = task.params["passes"]
                     interval = _khertz_to_hertz(task.params["interval"])
-                logger.info("Tuning to {}".format(freq))
-                logger.info("Interval:{}".format(task.params["interval"]))
+                    logger.info("Interval:{}".format(task.params["interval"]))
                 try:
-                    task.rig.set_frequency(freq)
-                except Exception:
-                    logger.warning("Communications Error!")
-                    self.scan_active = False
+                    self._frequency_tune(task, freq)
+                except (socket.error, socket.timeout):
                     break
-                time.sleep(TIME_WAIT_FOR_TUNE)
 
                 if self._signal_check(task.params["sgn_level"],
                                       task.rig,
                                       level):
-                    logger.info("Activity found on freq: {}".format(freq))
+
                     if task.params["record"]:
-                        task.rig.start_recording()
-                        logger.info("Recording started.")
+                        self._start_recording()
+
                     if task.params["auto_bookmark"]:
-                        nbm = {}
-                        nbm["freq"] = freq
-                        nbm["mode"] = task.rig.get_mode()
-                        nbm["time"] = datetime.datetime.utcnow().strftime("%a %b %d %H:%M %Y")
+                        nbm = self._create_new_bookmark(task, freq)
                         task.new_bookmark_list.append(nbm)
+
                     if task.params["log"]:
+                        nbm = self._create_new_bookmark(task, freq)
                         log.write('F', nbm, level[0])
+
                     if self.scan_active:
                         self._queue_sleep(task)
+
                     if task.params["record"]:
-                        task.rig.stop_recording()
-                        logger.info("Recording stopped.")
+                        self._stop_recording()
+
                 freq = freq + interval
                 if not self.scan_active:
                     return task
@@ -308,7 +349,7 @@ class Scanning(object):
             if level > sgn:
                 signal_found += 1
             time.sleep(NO_SIGNAL_DELAY)
-        logger.info("signal_found:{}".format(signal_found))
+        logger.info("Activity found, signal level: {}".format(level))
         if signal_found > 1:
             detected_level.append(level)
             return True
@@ -335,37 +376,40 @@ class Scanning(object):
                 bookmark = task.bookmarks.item(item).get('values')
                 if (bookmark[BM.lockout]) == 'L':
                     continue
-                logger.info("Tuning to {}".format(bookmark[BM.freq]))
+                freq = bookmark[BM.freq].replace(',', '')
                 try:
-                    task.rig.set_frequency(bookmark[BM.freq].replace(',', ''))
-                except Exception:
-                    logger.warning("Communications Error!")
-                    self.scan_active = False
+                    self._frequency_tune(task, freq)
+                except (socket.error, socket.timeout):
                     break
-                time.sleep(TIME_WAIT_FOR_TUNE)
+
                 if self._signal_check(task.params['sgn_level'],
                                       task.rig,
                                       level):
                     logger.info(
-                        "Activity found on freq: {}".format(bookmark[BM.freq]))
+                        "This freq is bookmarked as: {}".format(bookmark[BM.freq]))
+
                     if task.params['record']:
-                        task.rig.start_recording()
-                        logger.info("Recording started.")
+                        self._start_recording()
+
                     if task.params['log']:
                         log.write('B', bookmark, level[0])
+
                     while task.params['wait']:
                         if self._signal_check(task.params['sgn_level'],
                                               task.rig,
                                               level) and self.scan_active:
                             self._process_queue(task)
                         else: break
+
                     if self.scan_active:
                         self._queue_sleep(task)
+
                     if task.params['record']:
-                        task.rig.stop_recording()
-                        logger.info("Recording stopped.")
+                        self._stop_recording()
+
                 if not self.scan_active:
                     return task
+
             if pass_count > 0:
                 pass_count -= 1
                 if pass_count == 0 and task.params['passes'] > 0:

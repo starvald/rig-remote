@@ -17,10 +17,13 @@ Copyright (c) 2015 Simone Marzona
 """
 # import modules
 import pytest
+from rig_remote.disk_io import LogFile
 from rig_remote.rigctl import RigCtl
 from rig_remote.scanning import ScanningTask
+from rig_remote.scanning import Scanning
 from rig_remote.constants import MIN_INTERVAL
-from rig_remote.exceptions import UnsupportedScanningConfigError
+from rig_remote.stmessenger import STMessenger
+from rig_remote.exceptions import UnsupportedScanningConfigError, InvalidScanModeError
 
 class TestStr (str) :
 
@@ -41,12 +44,24 @@ class TestBool (object) :
     def is_checked(self):
         return(self.lbool)
 
+@pytest.fixture
+def fake_rig():
+    class fake_rig(object):
+        def set_frequency(self, freq):
+            pass
+        def get_mode(self):
+            return "am"
+        def get_level(self):
+            return "8.2"
+    return fake_rig()
+
 
 @pytest.fixture
 def scan_task():
     params = {}
-    scanq = None
+    scanq = STMessenger()
     mode = "bookmarks"
+    rig = None
     bookmark_list = []
     new_bookmark_list = []
     params["txt_range_min"] = TestStr("100")
@@ -219,3 +234,48 @@ def test_bad_param(scanq, mode, bookmark_list, new_bookmark_list, min_freq, max_
                      RigCtl(),
                      "")
 
+def test_tune():
+    st = scan_task()
+    st.passes = 4
+    log = LogFile()
+    freq = "test"
+    s = Scanning()
+    with pytest.raises(ValueError):
+        s._frequency_tune(st, freq)
+
+def test_2_tune():
+    st = scan_task()
+    st.passes = 4
+    log = LogFile()
+    freq = st.params["range_min"]
+    s = Scanning()
+    try:
+        s._frequency_tune(st, freq)
+    except Exception:
+        pass
+    assert (s.scan_active == False)
+
+def test_new_bookmarks(fake_rig):
+    st = scan_task()
+    st.rig = fake_rig
+    freq = st.params["range_min"]
+    s = Scanning()
+    original_len = len(st.new_bookmark_list)
+    nbm = s._create_new_bookmark(st, freq)
+    st.new_bookmark_list.append(nbm)
+    assert(original_len + 1 == len(st.new_bookmark_list))
+
+def test_1_scan():
+    s=Scanning()
+    st = scan_task()
+    st.mode="boh"
+    with pytest.raises(InvalidScanModeError):
+        s.scan(st)
+
+def test_signal_check(fake_rig):
+    s = Scanning()
+    st = scan_task()
+    st.rig = fake_rig
+    sgn_level = 2
+    detected_level = []
+    assert( s._signal_check( sgn_level, fake_rig, detected_level) == True)
